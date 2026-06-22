@@ -156,7 +156,7 @@ async function handleText(event, userId, session) {
     return client.replyMessage(event.replyToken, { type: 'text', text: 'ยกเลิกแล้ว' });
   }
 
-  if (text.toLowerCase() === 'myid' || text.toLowerCase() === 'userid') {
+  if (['myid', 'my id', 'userid', 'user id'].includes(text.toLowerCase())) {
     return client.replyMessage(event.replyToken, { type: 'text', text: `User ID:\n${userId}` });
   }
 
