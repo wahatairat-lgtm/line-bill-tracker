@@ -532,7 +532,17 @@ function buildStatsText(bills) {
 
 // ── Claude OCR ────────────────────────────────────────────────────────────────
 
+function detectMediaType(base64) {
+  const bytes = Buffer.from(base64.slice(0, 12), 'base64');
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) return 'image/jpeg';
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return 'image/png';
+  if (bytes[0] === 0x47 && bytes[1] === 0x49) return 'image/gif';
+  if (bytes[0] === 0x52 && bytes[4] === 0x57) return 'image/webp';
+  return 'image/jpeg';
+}
+
 async function extractBillData(base64) {
+  const mediaType = detectMediaType(base64);
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
@@ -541,7 +551,7 @@ async function extractBillData(base64) {
       content: [
         {
           type: 'image',
-          source: { type: 'base64', media_type: 'image/jpeg', data: base64 },
+          source: { type: 'base64', media_type: mediaType, data: base64 },
         },
         {
           type: 'text',
