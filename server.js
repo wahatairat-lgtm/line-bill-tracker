@@ -202,6 +202,10 @@ async function handleIdle(event, userId, text) {
     return client.replyMessage(event.replyToken, { type: 'text', text: buildStatsText(bills) });
   }
 
+  if (lower === 'myid' || lower === 'userid') {
+    return client.replyMessage(event.replyToken, { type: 'text', text: `User ID:\n${userId}` });
+  }
+
   if (lower === 'เพิ่มบิล' || lower === 'add') {
     const today = new Date().toISOString().split('T')[0];
     const bill = {
@@ -778,6 +782,34 @@ app.get('/api/cron/notify-due', async (req, res) => {
   } catch (e) {
     console.error('reminder sweep endpoint failed', e);
     res.status(500).json({ error: 'server error' });
+  }
+});
+
+app.post('/api/admin/import', async (req, res) => {
+  if (!process.env.CRON_SECRET || req.query.key !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  const { userId, bills } = req.body;
+  if (!userId || !Array.isArray(bills)) {
+    return res.status(400).json({ error: 'need userId and bills[]' });
+  }
+  try {
+    const existing = await db.getUserData(userId);
+    const merged = [...(existing.bills || [])];
+    const existingIds = new Set(merged.map(b => String(b.id)));
+    let added = 0;
+    for (const b of bills) {
+      if (!existingIds.has(String(b.id))) {
+        merged.push(b);
+        added++;
+      }
+    }
+    const persons = [...new Set(merged.flatMap(b => b.persons || []))];
+    await db.saveUserData(userId, merged, persons);
+    res.json({ ok: true, added, total: merged.length });
+  } catch (e) {
+    console.error('import failed', e);
+    res.status(500).json({ error: String(e.message) });
   }
 });
 
