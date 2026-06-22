@@ -26,7 +26,7 @@ const CARDS = {
 
 const REMINDER_OFFSETS = [3];
 
-const COMMANDS = ['ดูบิล', 'ดูทั้งหมด', 'สรุป', 'ช่วยเหลือ', 'help', 'all', 'summary'];
+const COMMANDS = ['ดูบิล', 'ดูทั้งหมด', 'สรุป', 'ช่วยเหลือ', 'help', 'all', 'summary', 'เพิ่มบิล', 'add'];
 
 // ── Express app ─────────────────────────────────────────────────────────────
 
@@ -165,6 +165,7 @@ async function handleText(event, userId, session) {
 
   switch (session.state) {
     case 'set_store':   return handleSetStore(event, userId, session, text);
+    case 'set_amount':  return handleSetAmount(event, userId, session, text);
     case 'set_card':    return handleSetCard(event, userId, session, text);
     case 'set_install': return handleSetInstall(event, userId, session, text);
     case 'add_persons': return handleAddPersons(event, userId, session, text);
@@ -201,11 +202,24 @@ async function handleIdle(event, userId, text) {
     return client.replyMessage(event.replyToken, { type: 'text', text: buildStatsText(bills) });
   }
 
+  if (lower === 'เพิ่มบิล' || lower === 'add') {
+    const today = new Date().toISOString().split('T')[0];
+    const bill = {
+      id: randomId(), store: '', date: today,
+      items: [], disc: 0, sc: 0, vat: 0, grand: 0,
+      card: '', installMonths: 0, persons: [],
+      personTotals: {}, paid: false, paidMonths: [],
+    };
+    await db.setSession(userId, 'set_store', { bill });
+    return client.replyMessage(event.replyToken, { type: 'text', text: 'ชื่อร้านอะไร?' });
+  }
+
   return client.replyMessage(event.replyToken, {
     type: 'text',
-    text: 'Bill Tracker 🧾\n\n📸 ส่งรูปบิล → บอทอ่านและบันทึกให้\n📋 "ดูบิล" → บิลค้างจ่าย\n📊 "สรุป" → ยอดรวมแต่ละบัตร\n📂 "ดูทั้งหมด" → บิลทุกรายการ',
+    text: 'Bill Tracker 🧾\n\n📸 ส่งรูปบิล → บอทอ่านและบันทึกให้\n➕ "เพิ่มบิล" → กรอกเองทีละขั้น\n📋 "ดูบิล" → บิลค้างจ่าย\n📊 "สรุป" → ยอดรวมแต่ละบัตร\n📂 "ดูทั้งหมด" → บิลทุกรายการ',
     quickReply: {
       items: [
+        qr('➕ เพิ่มบิล', 'เพิ่มบิล'),
         qr('📋 ดูบิล', 'ดูบิล'),
         qr('📊 สรุป', 'สรุป'),
         qr('📂 ดูทั้งหมด', 'ดูทั้งหมด'),
@@ -221,17 +235,37 @@ async function handleSetStore(event, userId, session, text) {
   if (text !== '✓ ถูกต้อง') bill.store = text || bill.store;
   if (!bill.store) bill.store = '(ไม่ระบุ)';
 
-  await db.setSession(userId, 'set_card', { bill });
+  if (!bill.grand) {
+    await db.setSession(userId, 'set_amount', { bill });
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: `ร้าน: ${bill.store} ✓\n\nยอดรวมทั้งหมด (บาท)?`,
+    });
+  }
 
+  await db.setSession(userId, 'set_card', { bill });
   return client.replyMessage(event.replyToken, {
     type: 'text',
     text: `ร้าน: ${bill.store} ✓\n\nใช้บัตรอะไร?`,
-    quickReply: {
-      items: [
-        ...Object.keys(CARDS).map(c => qr(c, c)),
-        qr('ไม่ระบุ', 'ไม่ระบุ'),
-      ],
-    },
+    quickReply: { items: [...Object.keys(CARDS).map(c => qr(c, c)), qr('ไม่ระบุ', 'ไม่ระบุ')] },
+  });
+}
+
+async function handleSetAmount(event, userId, session, text) {
+  const bill = { ...session.data.bill };
+  const amount = parseFloat(text.replace(/[฿,\s]/g, ''));
+  if (isNaN(amount) || amount <= 0) {
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: 'ใส่ตัวเลขยอดเงิน เช่น 1234.50',
+    });
+  }
+  bill.grand = amount;
+  await db.setSession(userId, 'set_card', { bill });
+  return client.replyMessage(event.replyToken, {
+    type: 'text',
+    text: `ยอด: ${fmt(amount)} ✓\n\nใช้บัตรอะไร?`,
+    quickReply: { items: [...Object.keys(CARDS).map(c => qr(c, c)), qr('ไม่ระบุ', 'ไม่ระบุ')] },
   });
 }
 
@@ -560,7 +594,12 @@ function buildStatsText(bills) {
     lines.push('', 'แยกตามบัตร:');
     Object.entries(byCard)
       .sort((a, b) => b[1] - a[1])
-      .forEach(([card, amt]) => lines.push(`• ${card}: ${fmt(amt)}`));
+      .forEach(([card, amt]) => {
+        const due = CARDS[card] ? getNextDueDate(card) : null;
+        const daysLeft = due ? daysUntil(due) : null;
+        const dueStr = due ? ` — ครบ ${fmtDate2(due)} (อีก ${daysLeft} วัน)` : '';
+        lines.push(`• ${card}: ${fmt(amt)}${dueStr}`);
+      });
   }
 
   return lines.join('\n');
@@ -626,6 +665,15 @@ function fmtDate2(date) {
 
 function randomId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function getNextDueDate(cardName) {
+  const c = CARDS[cardName];
+  if (!c) return null;
+  const now = new Date();
+  let due = new Date(now.getFullYear(), now.getMonth(), c.due);
+  if (due <= now) due = new Date(now.getFullYear(), now.getMonth() + 1, c.due);
+  return due;
 }
 
 function getBillDueDate(cardName, billDateStr) {
