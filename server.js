@@ -421,6 +421,38 @@ async function handlePostback(event, userId) {
       text: `${action === 'paid' ? '✓' : '↩'} ${bill.store || 'บิล'} — ${action === 'paid' ? 'จ่ายแล้ว' : 'ยังไม่ได้จ่าย'}`,
     });
   }
+
+  if (action === 'delete_confirm') {
+    const { bills } = await db.getUserData(userId);
+    const bill = bills.find(b => String(b.id) === String(billId));
+    if (!bill) {
+      return client.replyMessage(event.replyToken, { type: 'text', text: 'ไม่พบบิล' });
+    }
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: `ลบ "${bill.store || 'บิล'}" (${fmt(bill.grand)}) ใช่ไหม?`,
+      quickReply: {
+        items: [
+          { type: 'action', action: { type: 'postback', label: '✓ ลบเลย', data: `action=delete&billId=${bill.id}` } },
+          qr('✗ ยกเลิก', '✗ ยกเลิก'),
+        ],
+      },
+    });
+  }
+
+  if (action === 'delete') {
+    const { bills, knownPersons } = await db.getUserData(userId);
+    const idx = bills.findIndex(b => String(b.id) === String(billId));
+    if (idx === -1) {
+      return client.replyMessage(event.replyToken, { type: 'text', text: 'ไม่พบบิล' });
+    }
+    const removed = bills.splice(idx, 1)[0];
+    await db.saveUserData(userId, bills, knownPersons);
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: `🗑️ ลบแล้ว: ${removed.store || 'บิล'} — ${fmt(removed.grand)}`,
+    });
+  }
 }
 
 // ── Message builders ──────────────────────────────────────────────────────────
@@ -563,14 +595,26 @@ function buildBillBubble(bill) {
     },
     footer: {
       type: 'box',
-      layout: 'vertical',
+      layout: 'horizontal',
       paddingAll: '8px',
-      contents: [{
-        type: 'button',
-        action: { type: 'postback', label: paidLabel, data: paidData },
-        style: 'secondary',
-        height: 'sm',
-      }],
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'button',
+          action: { type: 'postback', label: paidLabel, data: paidData },
+          style: 'secondary',
+          height: 'sm',
+          flex: 3,
+        },
+        {
+          type: 'button',
+          action: { type: 'postback', label: '🗑️ ลบ', data: `action=delete_confirm&billId=${bill.id}` },
+          style: 'secondary',
+          height: 'sm',
+          flex: 1,
+          color: '#DC2626',
+        },
+      ],
     },
   };
 }
