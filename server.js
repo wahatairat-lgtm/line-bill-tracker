@@ -156,6 +156,10 @@ async function handleText(event, userId, session) {
     return client.replyMessage(event.replyToken, { type: 'text', text: 'ยกเลิกแล้ว' });
   }
 
+  if (text.toLowerCase() === 'myid' || text.toLowerCase() === 'userid') {
+    return client.replyMessage(event.replyToken, { type: 'text', text: `User ID:\n${userId}` });
+  }
+
   if (session.state !== 'idle' && COMMANDS.includes(text.toLowerCase())) {
     return client.replyMessage(event.replyToken, {
       type: 'text',
@@ -200,10 +204,6 @@ async function handleIdle(event, userId, text) {
   if (lower === 'สรุป' || lower === 'summary') {
     const { bills } = await db.getUserData(userId);
     return client.replyMessage(event.replyToken, { type: 'text', text: buildStatsText(bills) });
-  }
-
-  if (lower === 'myid' || lower === 'userid') {
-    return client.replyMessage(event.replyToken, { type: 'text', text: `User ID:\n${userId}` });
   }
 
   if (lower === 'เพิ่มบิล' || lower === 'add') {
