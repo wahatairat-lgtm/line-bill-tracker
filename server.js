@@ -683,7 +683,17 @@ function buildStatsFlex(bills) {
   ];
 
   const byCard = {};
-  unpaid.forEach(b => { if (b.card) byCard[b.card] = (byCard[b.card] || 0) + (b.grand || 0); });
+  const byCardPersons = {};
+  unpaid.forEach(b => {
+    if (!b.card) return;
+    byCard[b.card] = (byCard[b.card] || 0) + (b.grand || 0);
+    if (!byCardPersons[b.card]) byCardPersons[b.card] = {};
+    if (b.personTotals) {
+      Object.entries(b.personTotals).forEach(([p, a]) => {
+        byCardPersons[b.card][p] = (byCardPersons[b.card][p] || 0) + (a || 0);
+      });
+    }
+  });
   if (Object.keys(byCard).length) {
     bodyContents.push({ type: 'separator', margin: 'md' });
     bodyContents.push({ type: 'text', text: '💳 แยกตามบัตร  (แตะเพื่อดูบิล)', size: 'xs', color: '#6B7280', margin: 'md', weight: 'bold' });
@@ -693,13 +703,23 @@ function buildStatsFlex(bills) {
       const dueColor = days !== null ? (days <= 3 ? '#DC2626' : days <= 7 ? '#D97706' : '#059669') : '#9E9892';
       const dueText = due ? `ครบ ${fmtDate2(due)}` : '';
       bodyContents.push({
-        type: 'box', layout: 'horizontal', margin: 'xs',
+        type: 'box', layout: 'horizontal', margin: 'sm',
         action: { type: 'postback', label: card, data: `action=filter_card&card=${card}` },
         contents: [
           { type: 'text', text: card, size: 'sm', color: '#6366F1', flex: 2, weight: 'bold' },
           { type: 'text', text: fmt(amt), size: 'sm', weight: 'bold', color: '#1A1714', align: 'end', flex: 2 },
           { type: 'text', text: dueText, size: 'xs', color: dueColor, align: 'end', flex: 2 },
         ],
+      });
+      const cardPersons = byCardPersons[card] || {};
+      Object.entries(cardPersons).sort((a, b) => b[1] - a[1]).forEach(([p, a]) => {
+        bodyContents.push({
+          type: 'box', layout: 'horizontal', margin: 'xs', paddingStart: '12px',
+          contents: [
+            { type: 'text', text: `· ${p}`, size: 'xs', color: '#6B7280', flex: 3 },
+            { type: 'text', text: fmt(a), size: 'xs', color: '#4B4640', align: 'end', flex: 2 },
+          ],
+        });
       });
     });
   }
