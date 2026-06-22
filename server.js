@@ -203,7 +203,7 @@ async function handleIdle(event, userId, text) {
 
   if (lower === 'สรุป' || lower === 'summary') {
     const { bills } = await db.getUserData(userId);
-    return client.replyMessage(event.replyToken, { type: 'text', text: buildStatsText(bills) });
+    return client.replyMessage(event.replyToken, buildStatsFlex(bills));
   }
 
   if (lower === 'เพิ่มบิล' || lower === 'add') {
@@ -532,48 +532,35 @@ function buildBillListFlex(bills) {
 function buildBillBubble(bill) {
   const due = bill.card && CARDS[bill.card] ? getBillDueDate(bill.card, bill.date) : null;
   const days = daysUntil(due);
-  const dueColor = days < 0 ? '#DC2626' : days <= 3 ? '#DC2626' : days <= 7 ? '#D97706' : '#059669';
+  const isOverdue = days < 0;
+  const isDueSoon = !isOverdue && days <= 3;
+
+  const headerBg = bill.paid ? '#059669' : isOverdue ? '#DC2626' : isDueSoon ? '#D97706' : '#374151';
+  const headerText = bill.paid ? '✓ จ่ายแล้ว' : isOverdue ? `⚠️ เลยกำหนด ${-days} วัน` : isDueSoon ? `🔔 อีก ${days} วัน` : '📋 ค้างจ่าย';
 
   const bodyContents = [
-    {
-      type: 'text',
-      text: bill.store || '(ไม่ระบุ)',
-      weight: 'bold',
-      size: 'sm',
-      color: '#1A1714',
-      wrap: true,
-    },
-    {
-      type: 'text',
-      text: fmt(bill.grand),
-      size: 'xl',
-      weight: 'bold',
-      color: bill.paid ? '#059669' : '#E84A35',
-      margin: 'xs',
-    },
+    { type: 'text', text: bill.store || '(ไม่ระบุ)', weight: 'bold', size: 'sm', color: '#1A1714', wrap: true, maxLines: 2 },
+    { type: 'text', text: fmt(bill.grand), size: 'xxl', weight: 'bold', color: bill.paid ? '#059669' : '#E84A35', margin: 'xs' },
   ];
 
   const metaContents = [
     ...(bill.date ? [{ type: 'text', text: fmtDate(bill.date), size: 'xs', color: '#9E9892', flex: 1 }] : []),
-    ...(bill.card ? [{ type: 'text', text: bill.card, size: 'xs', color: '#9E9892', align: 'end' }] : []),
+    ...(bill.card ? [{ type: 'text', text: bill.card, size: 'xs', color: '#6366F1', align: 'end', weight: 'bold' }] : []),
   ];
-  if (metaContents.length) {
-    bodyContents.push({ type: 'box', layout: 'horizontal', margin: 'sm', contents: metaContents });
+  if (metaContents.length) bodyContents.push({ type: 'box', layout: 'horizontal', margin: 'sm', contents: metaContents });
+
+  if (bill.installMonths > 0) {
+    bodyContents.push({ type: 'text', text: `📆 ผ่อน ${bill.installMonths} เดือน · ${fmt(bill.grand / bill.installMonths)}/เดือน`, size: 'xs', color: '#6366F1', margin: 'xs' });
   }
 
   if (due && !bill.paid) {
-    bodyContents.push({
-      type: 'text',
-      text: `ครบกำหนด ${fmtDate2(due)}  ${days < 0 ? `เลย ${-days} วัน` : `อีก ${days} วัน`}`,
-      size: 'xs',
-      color: dueColor,
-      margin: 'sm',
-    });
+    const dueColor = isOverdue ? '#DC2626' : isDueSoon ? '#D97706' : '#6B7280';
+    bodyContents.push({ type: 'text', text: `📅 ครบกำหนด ${fmtDate2(due)}`, size: 'xs', color: dueColor, margin: 'sm' });
   }
 
   if (bill.persons?.length > 0 && bill.personTotals) {
-    const lines = bill.persons.map(p => `${p}: ${fmt(bill.personTotals[p] || 0)}`).join('\n');
-    bodyContents.push({ type: 'text', text: lines, size: 'xs', color: '#4B4640', margin: 'sm', wrap: true });
+    const lines = bill.persons.map(p => `${p} ${fmt(bill.personTotals[p] || 0)}`).join('  ');
+    bodyContents.push({ type: 'text', text: `👥 ${lines}`, size: 'xs', color: '#4B4640', margin: 'sm', wrap: true });
   }
 
   const paidLabel = bill.paid ? '↩ ยังไม่ได้จ่าย' : '✓ จ่ายแล้ว';
@@ -582,9 +569,12 @@ function buildBillBubble(bill) {
   return {
     type: 'bubble',
     size: 'kilo',
-    styles: {
-      body: { backgroundColor: bill.paid ? '#F0FDF4' : '#FFFFFF' },
-      footer: { backgroundColor: bill.paid ? '#F0FDF4' : '#FFFFFF' },
+    header: {
+      type: 'box',
+      layout: 'baseline',
+      backgroundColor: headerBg,
+      paddingAll: '8px',
+      contents: [{ type: 'text', text: headerText, color: '#FFFFFF', size: 'xs', weight: 'bold' }],
     },
     body: {
       type: 'box',
@@ -599,22 +589,71 @@ function buildBillBubble(bill) {
       paddingAll: '8px',
       spacing: 'sm',
       contents: [
-        {
-          type: 'button',
-          action: { type: 'postback', label: paidLabel, data: paidData },
-          style: 'secondary',
-          height: 'sm',
-          flex: 3,
-        },
-        {
-          type: 'button',
-          action: { type: 'postback', label: '🗑️ ลบ', data: `action=delete_confirm&billId=${bill.id}` },
-          style: 'secondary',
-          height: 'sm',
-          flex: 1,
-          color: '#DC2626',
-        },
+        { type: 'button', action: { type: 'postback', label: paidLabel, data: paidData }, style: 'secondary', height: 'sm', flex: 3 },
+        { type: 'button', action: { type: 'postback', label: '🗑️ ลบ', data: `action=delete_confirm&billId=${bill.id}` }, style: 'secondary', height: 'sm', flex: 1, color: '#DC2626' },
       ],
+    },
+  };
+}
+
+function buildStatsFlex(bills) {
+  if (!bills.length) return { type: 'text', text: 'ยังไม่มีบิล' };
+
+  const total = bills.reduce((s, b) => s + (b.grand || 0), 0);
+  const unpaid = bills.filter(b => !b.paid);
+  const unpaidTotal = unpaid.reduce((s, b) => s + (b.grand || 0), 0);
+
+  const row = (label, value, labelColor = '#6B7280', valueColor = '#1A1714') => ({
+    type: 'box', layout: 'horizontal', margin: 'xs',
+    contents: [
+      { type: 'text', text: label, size: 'sm', color: labelColor, flex: 3 },
+      { type: 'text', text: value, size: 'sm', weight: 'bold', color: valueColor, align: 'end', flex: 2 },
+    ],
+  });
+
+  const bodyContents = [
+    { type: 'text', text: '📊 สรุปยอด', weight: 'bold', size: 'md', color: '#1A1714' },
+    { type: 'separator', margin: 'sm' },
+    row('รวมทั้งหมด', fmt(total)),
+    row(`ค้างจ่าย (${unpaid.length} บิล)`, fmt(unpaidTotal), '#DC2626', '#DC2626'),
+  ];
+
+  const byCard = {};
+  bills.forEach(b => { if (b.card) byCard[b.card] = (byCard[b.card] || 0) + (b.grand || 0); });
+  if (Object.keys(byCard).length) {
+    bodyContents.push({ type: 'separator', margin: 'md' });
+    bodyContents.push({ type: 'text', text: '💳 แยกตามบัตร', size: 'xs', color: '#6B7280', margin: 'md', weight: 'bold' });
+    Object.entries(byCard).sort((a, b) => b[1] - a[1]).forEach(([card, amt]) => {
+      const due = CARDS[card] ? getNextDueDate(card) : null;
+      const days = due ? daysUntil(due) : null;
+      const dueColor = days !== null ? (days <= 3 ? '#DC2626' : days <= 7 ? '#D97706' : '#059669') : '#9E9892';
+      const dueText = due ? `ครบ ${fmtDate2(due)}` : '';
+      bodyContents.push({
+        type: 'box', layout: 'horizontal', margin: 'xs',
+        contents: [
+          { type: 'text', text: card, size: 'sm', color: '#1A1714', flex: 2 },
+          { type: 'text', text: fmt(amt), size: 'sm', weight: 'bold', color: '#1A1714', align: 'end', flex: 2 },
+          { type: 'text', text: dueText, size: 'xs', color: dueColor, align: 'end', flex: 2 },
+        ],
+      });
+    });
+  }
+
+  const byPerson = {};
+  bills.forEach(b => { if (b.personTotals) Object.entries(b.personTotals).forEach(([p, a]) => { byPerson[p] = (byPerson[p] || 0) + (a || 0); }); });
+  if (Object.keys(byPerson).length) {
+    bodyContents.push({ type: 'separator', margin: 'md' });
+    bodyContents.push({ type: 'text', text: '👥 แยกตามคน', size: 'xs', color: '#6B7280', margin: 'md', weight: 'bold' });
+    Object.entries(byPerson).sort((a, b) => b[1] - a[1]).forEach(([p, amt]) => bodyContents.push(row(p, fmt(amt))));
+  }
+
+  return {
+    type: 'flex',
+    altText: `สรุปยอด ${fmt(total)} / ค้างจ่าย ${fmt(unpaidTotal)}`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
     },
   };
 }
