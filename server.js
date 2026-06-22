@@ -101,7 +101,7 @@ async function handleImage(event, userId) {
   try {
     billData = await extractBillData(base64);
   } catch (e) {
-    console.error('OCR failed', e);
+    console.error('OCR failed status:', e.status, 'message:', e.message, 'error:', JSON.stringify(e.error));
   }
 
   const today = new Date().toISOString().split('T')[0];
@@ -303,13 +303,45 @@ async function handleAddPersons(event, userId, session, text) {
 // ── State: confirm ────────────────────────────────────────────────────────────
 
 async function handleConfirm(event, userId, session, text) {
+  const bill = { ...session.data.bill };
+  const knownPersons = session.data.knownPersons || [];
+
+  if (text === '✏️ ชื่อร้าน') {
+    await db.setSession(userId, 'set_store', { bill });
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: `ชื่อร้านปัจจุบัน: ${bill.store}\n\nพิมพ์ชื่อร้านใหม่:`,
+    });
+  }
+  if (text === '✏️ บัตร') {
+    await db.setSession(userId, 'set_card', { bill });
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: 'เลือกบัตรใหม่:',
+      quickReply: { items: [...Object.keys(CARDS).map(c => qr(c, c)), qr('ไม่ระบุ', 'ไม่ระบุ')] },
+    });
+  }
+  if (text === '✏️ ผ่อน') {
+    await db.setSession(userId, 'set_install', { bill });
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: 'เลือกจำนวนเดือนใหม่:',
+      quickReply: {
+        items: [qr('ไม่ผ่อน', '0'), qr('3 เดือน', '3'), qr('4 เดือน', '4'), qr('6 เดือน', '6'), qr('10 เดือน', '10')],
+      },
+    });
+  }
+  if (text === '✏️ คนหาร') {
+    bill.persons = [];
+    bill.personTotals = {};
+    await db.setSession(userId, 'add_persons', { bill, knownPersons });
+    return client.replyMessage(event.replyToken, buildPersonsMessage([], knownPersons));
+  }
+
   if (text !== '✓ บันทึก') {
     await db.clearSession(userId);
     return client.replyMessage(event.replyToken, { type: 'text', text: 'ยกเลิกแล้ว' });
   }
-
-  const bill = { ...session.data.bill };
-  const knownPersons = session.data.knownPersons || [];
 
   if (bill.persons.length > 0) {
     const perPerson = bill.grand / bill.persons.length;
@@ -404,6 +436,10 @@ function buildConfirmMessage(bill) {
     quickReply: {
       items: [
         qr('✓ บันทึก', '✓ บันทึก'),
+        qr('✏️ ชื่อร้าน', '✏️ ชื่อร้าน'),
+        qr('✏️ บัตร', '✏️ บัตร'),
+        qr('✏️ ผ่อน', '✏️ ผ่อน'),
+        qr('✏️ คนหาร', '✏️ คนหาร'),
         qr('✗ ยกเลิก', '✗ ยกเลิก'),
       ],
     },
@@ -544,7 +580,7 @@ function detectMediaType(base64) {
 async function extractBillData(base64) {
   const mediaType = detectMediaType(base64);
   const msg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 1024,
     messages: [{
       role: 'user',
