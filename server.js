@@ -650,6 +650,21 @@ function buildStatsText(bills) {
       });
   }
 
+  const byPerson = {};
+  bills.forEach(b => {
+    if (b.personTotals && Object.keys(b.personTotals).length) {
+      Object.entries(b.personTotals).forEach(([p, a]) => {
+        byPerson[p] = (byPerson[p] || 0) + (a || 0);
+      });
+    }
+  });
+  if (Object.keys(byPerson).length) {
+    lines.push('', 'แยกตามคน:');
+    Object.entries(byPerson)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([p, amt]) => lines.push(`• ${p}: ${fmt(amt)}`));
+  }
+
   return lines.join('\n');
 }
 
