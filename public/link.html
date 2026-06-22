@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>เชื่อมต่อบัญชี — Bill Tracker</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    font-family:'DM Sans',-apple-system,'Noto Sans Thai',sans-serif;
+    background:#FAF8F5;color:#4B4640;padding:24px;text-align:center;
+  }
+  .box{max-width:340px}
+  .spin{
+    width:32px;height:32px;border-radius:50%;margin:0 auto 16px;
+    border:3px solid #E5E0D8;border-top-color:#4B4640;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:16px;margin:0 0 8px}
+  p{font-size:13px;color:#9E9892;margin:0}
+  .err{color:#EF4444;font-weight:600;font-size:14px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <div class="spin"></div>
+  <h1>กำลังเชื่อมต่อบัญชี...</h1>
+  <p>กรุณารอสักครู่</p>
+</div>
+<script>
+function showError(msg){
+  document.getElementById('box').innerHTML =
+    '<div class="err">เชื่อมต่อบัญชีไม่สำเร็จ</div><p>' + msg + '</p>';
+}
+
+async function main(){
+  const params = new URLSearchParams(location.search);
+  const linkToken = params.get('linkToken');
+  if(!linkToken){
+    showError('ไม่พบลิงก์เชื่อมต่อบัญชี กรุณากลับไปที่แชทแล้วแตะปุ่ม "เชื่อมต่อบัญชี" อีกครั้ง');
+    return;
+  }
+
+  let LIFF_ID;
+  try{
+    const cfgRes = await fetch('/api/config');
+    const cfg = await cfgRes.json();
+    LIFF_ID = cfg.liffId;
+    if(!LIFF_ID) throw new Error('no liffId');
+  }catch(e){
+    showError('โหลดการตั้งค่าไม่สำเร็จ ลองใหม่อีกครั้ง');
+    return;
+  }
+
+  try{
+    await liff.init({ liffId: LIFF_ID });
+    if(!liff.isLoggedIn()){
+      liff.login({ redirectUri: location.href });
+      return; // หน้าจะรีโหลดเองหลัง login เสร็จ
+    }
+    const idToken = liff.getIDToken();
+    const res = await fetch('/api/link/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken, linkToken }),
+    });
+    const data = await res.json();
+    if(!res.ok || !data.redirectUrl){
+      showError('โทเค็นหมดอายุหรือไม่ถูกต้อง กรุณากลับไปที่แชทแล้วแตะปุ่ม "เชื่อมต่อบัญชี" อีกครั้ง');
+      return;
+    }
+    location.href = data.redirectUrl;
+  }catch(e){
+    console.error('link flow failed', e);
+    showError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+  }
+}
+main();
+</script>
+</body>
+</html>

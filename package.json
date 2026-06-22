@@ -1,0 +1,20 @@
+{
+  "name": "bill-tracker-line-bot",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Bill Tracker — pure LINE chatbot with Claude OCR",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@line/bot-sdk": "^9.4.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}
